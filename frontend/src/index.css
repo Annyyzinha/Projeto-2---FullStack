@@ -1,0 +1,427 @@
+:root {
+  --azul-escuro: #0f172a;
+  --azul-principal: #2563eb;
+  --azul-royal: #1d4ed8;
+  --azul-ciano: #0ea5e9;
+  --azul-suave: #eff6ff;
+  --indigo: #4f46e5;
+  --verde: #10b981;
+  --verde-escuro: #059669;
+  --coral: #f43f5e;
+  --coral-escuro: #e11d48;
+  --ambar: #f59e0b;
+  --fundo-pagina: #f1f5fd;
+  --borda-suave: #e2e8f0;
+  --texto-principal: #0f172a;
+  --texto-secundario: #64748b;
+  --sombra-card: 0 10px 25px -5px rgba(37, 99, 235, 0.08), 0 4px 10px -6px rgba(15, 23, 42, 0.05);
+  --sombra-hover: 0 18px 35px -8px rgba(37, 99, 235, 0.16), 0 8px 16px -8px rgba(15, 23, 42, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  background: radial-gradient(circle at 0% 0%, #e0ecff 0%, #f1f5fd 45%, #f8fafc 100%);
+  background-attachment: fixed;
+  color: var(--texto-principal);
+  min-height: 100vh;
+}
+
+/* Animação suave de entrada das páginas */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.container {
+  animation: fadeInUp 0.35s ease-out;
+}
+
+/* Navbar moderna com gradiente azul */
+.navbar-fintech {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 52%, #0284c7 100%) !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+  backdrop-filter: blur(10px);
+}
+
+.navbar-fintech .navbar-brand {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.brand-icon-box {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.35);
+}
+
+.navbar-fintech .nav-link {
+  color: rgba(255, 255, 255, 0.82) !important;
+  font-weight: 500;
+  font-size: 0.92rem;
+  padding: 0.48rem 0.9rem !important;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+  margin: 0 2px;
+}
+
+.navbar-fintech .nav-link:hover {
+  color: #ffffff !important;
+  background-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.navbar-fintech .nav-link.active {
+  color: #ffffff !important;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.35);
+}
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 0.3rem 0.75rem 0.3rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #38bdf8, #818cf8);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Banner de boas-vindas do Dashboard */
+.hero-dashboard {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #0ea5e9 100%);
+  border-radius: 20px;
+  padding: 1.75rem 2rem;
+  color: #ffffff;
+  box-shadow: 0 16px 32px -10px rgba(37, 99, 235, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-dashboard::after {
+  content: '';
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  right: -60px;
+  top: -90px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 70%);
+  pointer-events: none;
+}
+
+/* Cards modernos com micro-interação */
+.card {
+  border: 1px solid rgba(226, 232, 240, 0.85) !important;
+  border-radius: 16px !important;
+  box-shadow: var(--sombra-card) !important;
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  overflow: hidden;
+}
+
+.card-interativo:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--sombra-hover) !important;
+}
+
+/* Cards KPI coloridos */
+.kpi-card {
+  border-radius: 18px !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi-card-entrada {
+  background: linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%);
+  border-left: 5px solid var(--verde) !important;
+}
+
+.kpi-card-saida {
+  background: linear-gradient(135deg, #ffffff 0%, #fff1f2 100%);
+  border-left: 5px solid var(--coral) !important;
+}
+
+.kpi-card-saldo {
+  background: linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
+  border-left: 5px solid var(--azul-principal) !important;
+}
+
+.kpi-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.kpi-icon-entrada {
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--verde-escuro);
+}
+
+.kpi-icon-saida {
+  background: rgba(244, 63, 94, 0.14);
+  color: var(--coral-escuro);
+}
+
+.kpi-icon-saldo {
+  background: rgba(37, 99, 235, 0.14);
+  color: var(--azul-royal);
+}
+
+/* Cartão de Crédito visual no Dashboard */
+.credit-card-tile {
+  background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 55%, #0284c7 100%);
+  color: #ffffff;
+  border-radius: 16px;
+  padding: 1.15rem 1.25rem;
+  box-shadow: 0 12px 24px -8px rgba(30, 58, 138, 0.42);
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+.credit-card-tile:hover {
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: 0 16px 30px -8px rgba(30, 58, 138, 0.55);
+}
+
+.credit-chip {
+  width: 34px;
+  height: 24px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #fde68a, #f59e0b);
+  opacity: 0.9;
+}
+
+/* Botões com gradiente e resposta tátil */
+.btn {
+  border-radius: 10px !important;
+  font-weight: 600;
+  transition: all 0.2s ease !important;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #2563eb 0%, #0284c7 100%) !important;
+  border: none !important;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.28);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1d4ed8 0%, #0369a1 100%) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.36);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-outline-primary {
+  border-color: #bfdbfe !important;
+  color: #1d4ed8 !important;
+  background-color: #eff6ff !important;
+}
+
+.btn-outline-primary:hover {
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+}
+
+.btn-outline-danger {
+  border-color: #fecdd3 !important;
+  color: #e11d48 !important;
+  background-color: #fff1f2 !important;
+}
+
+.btn-outline-danger:hover {
+  background-color: #f43f5e !important;
+  border-color: #f43f5e !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+}
+
+/* Inputs e Selects com foco azul luminoso */
+.form-control,
+.form-select {
+  border-radius: 10px !important;
+  border-color: #cbd5e1 !important;
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14) !important;
+}
+
+/* Tabelas limpas com hover colorido */
+.table thead th {
+  background-color: #eff6ff !important;
+  color: #1e3a8a;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid #dbeafe !important;
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+.table tbody tr {
+  transition: background-color 0.18s ease, transform 0.18s ease;
+}
+
+.table-hover tbody tr:hover {
+  background-color: #f0f7ff !important;
+}
+
+/* Badges suaves modernos (pill) */
+.badge {
+  border-radius: 999px !important;
+  padding: 0.42em 0.85em !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+}
+
+.badge.bg-success {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+}
+
+.badge.bg-danger {
+  background-color: #ffe4e6 !important;
+  color: #9f1239 !important;
+}
+
+.badge.bg-primary {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+}
+
+.badge.bg-warning {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+}
+
+.badge.bg-info {
+  background-color: #cffafe !important;
+  color: #155e75 !important;
+}
+
+.badge.bg-secondary {
+  background-color: #e2e8f0 !important;
+  color: #334155 !important;
+}
+
+/* Acordeão das Faturas */
+.accordion-item {
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 14px !important;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.accordion-item:hover {
+  border-color: #93c5fd !important;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.08);
+}
+
+.accordion-button:not(.collapsed) {
+  background: linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%) !important;
+  color: #1e3a8a !important;
+  box-shadow: none !important;
+}
+
+.progress {
+  border-radius: 999px !important;
+  background-color: #e2e8f0 !important;
+  overflow: hidden;
+}
+
+.progress-bar {
+  border-radius: 999px !important;
+  transition: width 0.5s ease;
+}
+
+/* Telas de Login e Cadastro com fundo gradiente azul */
+.auth-wrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 55%, #0ea5e9 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-wrapper::before {
+  content: '';
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.28) 0%, transparent 70%);
+  top: -140px;
+  right: -120px;
+  pointer-events: none;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 470px;
+  border-radius: 22px !important;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.45) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  animation: fadeInUp 0.4s ease-out;
+}
+
+/* Modais e Alertas mais limpos */
+.modal-content {
+  border: none !important;
+  border-radius: 18px !important;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.22);
+}
+
+.alert {
+  border-radius: 12px !important;
+  border: none !important;
+}
