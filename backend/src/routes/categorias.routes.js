@@ -1,115 +1,54 @@
-import { Router } from 'express';
-import { autenticar } from '../middlewares/autenticar.js';
-import { Categoria } from '../models/Categoria.js';
+const express = require('express');
+const Categoria = require('../models/Categoria');
+const autenticar = require('../middlewares/autenticar');
+const { validarCategoria, validarId } = require('../middlewares/validacao');
+const { ErroHttp, ErroValidacao, rota } = require('../middlewares/erros');
 
-const router = Router();
+const router = express.Router();
 router.use(autenticar);
 
-router.get('/', async (req, res, next) => {
-  try {
-    const categorias = await Categoria.listarPorUsuario(req.usuarioId);
-    return res.status(200).json(categorias);
-  } catch (err) {
-    return next(err);
+const naoEncontrada = () => new ErroHttp(404, 'Categoria não encontrada.');
+
+// GET /api/categorias?tipo=entrada|saida
+router.get('/', rota(async (req, res) => {
+  const { tipo } = req.query;
+  if (tipo !== undefined && !['entrada', 'saida'].includes(tipo)) {
+    throw new ErroValidacao({ tipo: 'O tipo deve ser "entrada" ou "saida".' });
   }
-});
+  res.json(await Categoria.listar(req.usuarioId, tipo));
+}));
 
-router.post('/', async (req, res, next) => {
-  const { nome, tipo } = req.body || {};
-  const campos = {};
+router.get('/:id', validarId, rota(async (req, res) => {
+  const categoria = await Categoria.buscar(req.usuarioId, req.params.id);
+  if (!categoria) throw naoEncontrada();
+  res.json(categoria);
+}));
 
-  if (typeof nome !== 'string' || !nome.trim()) {
-    campos.nome = 'O nome da categoria é obrigatório.';
-  } else if (nome.trim().length > 60) {
-    campos.nome = 'O nome da categoria deve ter no máximo 60 caracteres.';
+router.post('/', validarCategoria, rota(async (req, res) => {
+  res.status(201).json(await Categoria.criar(req.usuarioId, req.dados));
+}));
+
+router.put('/:id', validarId, validarCategoria, rota(async (req, res) => {
+  const atual = await Categoria.buscar(req.usuarioId, req.params.id);
+  if (!atual) throw naoEncontrada();
+  // trocar o tipo deixaria lançamentos com categoria de tipo diferente
+  if (atual.tipo !== req.dados.tipo && (await Categoria.contarLancamentos(req.usuarioId, req.params.id)) > 0) {
+    throw new ErroHttp(409, 'Não é possível alterar o tipo de uma categoria que já possui lançamentos.', {
+      tipo: 'A categoria possui lançamentos; o tipo não pode ser alterado.',
+    });
   }
+  res.json(await Categoria.atualizar(req.usuarioId, req.params.id, req.dados));
+}));
 
-  if (typeof tipo !== 'string' || !['entrada', 'saida'].includes(tipo)) {
-    campos.tipo = 'O tipo deve ser entrada ou saida.';
+router.delete('/:id', validarId, rota(async (req, res) => {
+  const categoria = await Categoria.buscar(req.usuarioId, req.params.id);
+  if (!categoria) throw naoEncontrada();
+  const n = await Categoria.contarLancamentos(req.usuarioId, req.params.id);
+  if (n > 0) {
+    throw new ErroHttp(409, `A categoria "${categoria.nome}" possui ${n} lançamento(s) e não pode ser excluída. Mova ou exclua os lançamentos antes.`);
   }
+  await Categoria.excluir(req.usuarioId, req.params.id);
+  res.status(204).end();
+}));
 
-  if (Object.keys(campos).length > 0) {
-    return res.status(400).json({ erro: 'Dados inválidos.', campos });
-  }
-
-  try {
-    const nova = await Categoria.criar({ usuarioId: req.usuarioId, nome, tipo });
-    return res.status(201).json(nova);
-  } catch (err) {
-    if (err.code === 11000) {
-      return res.status(409).json({
-        erro: 'Categoria duplicada.',
-        campos: { nome: 'Você já possui uma categoria com este nome e tipo.' }
-      });
-    }
-    return next(err);
-  }
-});
-
-router.put('/:id', async (req, res, next) => {
-  const { nome, tipo } = req.body || {};
-  const campos = {};
-
-  if (typeof nome !== 'string' || !nome.trim()) {
-    campos.nome = 'O nome da categoria é obrigatório.';
-  } else if (nome.trim().length > 60) {
-    campos.nome = 'O nome da categoria deve ter no máximo 60 caracteres.';
-  }
-
-  if (typeof tipo !== 'string' || !['entrada', 'saida'].includes(tipo)) {
-    campos.tipo = 'O tipo deve ser entrada ou saida.';
-  }
-
-  if (Object.keys(campos).length > 0) {
-    return res.status(400).json({ erro: 'Dados inválidos.', campos });
-  }
-
-  try {
-    const existente = await Categoria.buscarPorId(req.params.id, req.usuarioId);
-    if (!existente) {
-      return res.status(404).json({ erro: 'Categoria não encontrada.', campos: {} });
-    }
-
-    if (existente.tipo !== tipo && (await Categoria.temLancamentos(req.params.id, req.usuarioId))) {
-      return res.status(409).json({
-        erro: 'Não é possível alterar o tipo de uma categoria que já possui lançamentos.',
-        campos: { tipo: 'Esta categoria já está vinculada a lançamentos.' }
-      });
-    }
-
-    const atualizada = await Categoria.atualizar(req.params.id, req.usuarioId, { nome, tipo });
-    return res.status(200).json(atualizada);
-  } catch (err) {
-    if (err.code === 11000) {
-      return res.status(409).json({
-        erro: 'Categoria duplicada.',
-        campos: { nome: 'Você já possui uma categoria com este nome e tipo.' }
-      });
-    }
-    return next(err);
-  }
-});
-
-router.delete('/:id', async (req, res, next) => {
-  try {
-    const categoria = await Categoria.buscarPorId(req.params.id, req.usuarioId);
-    if (!categoria) {
-      return res.status(404).json({ erro: 'Categoria não encontrada.', campos: {} });
-    }
-
-    const emUso = await Categoria.temLancamentos(req.params.id, req.usuarioId);
-    if (emUso) {
-      return res.status(409).json({
-        erro: 'Não é possível excluir uma categoria que possui lançamentos associados.',
-        campos: {}
-      });
-    }
-
-    await Categoria.excluir(req.params.id, req.usuarioId);
-    return res.status(204).send();
-  } catch (err) {
-    return next(err);
-  }
-});
-
-export default router;
+module.exports = router;

@@ -1,42 +1,40 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import mongoose, { conectarBanco } from './config/db.js';
-import authRoutes from './routes/auth.routes.js';
-import categoriasRoutes from './routes/categorias.routes.js';
-import fontesRoutes from './routes/fontes.routes.js';
-import lancamentosRoutes from './routes/lancamentos.routes.js';
-import relatoriosRoutes from './routes/relatorios.routes.js';
-import saudeFinanceiraRoutes from './routes/saudeFinanceira.routes.js';
-import { tratarErros } from './middlewares/erros.js';
+const express = require('express');
+const cors = require('cors');
+const env = require('./config/env');
+const { naoEncontrado, tratarErros } = require('./middlewares/erros');
+const { client } = require('./config/db');
 
-dotenv.config();
+if (!env.jwtSegredo) {
+  console.error('JWT_SECRET não definido. Copie .env.example para .env e preencha.');
+  process.exit(1);
+}
 
 const app = express();
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }));
-app.use(express.json());
+app.disable('x-powered-by');
+app.use(cors({ origin: env.origemCors })); // CORS restrito à origem do front-end
+app.use(express.json({ limit: '100kb' }));
 
-app.get('/api/health', (req, res) => {
-  const conectado = mongoose.connection.readyState === 1;
-  res.status(conectado ? 200 : 503).json({
-    status: conectado ? 'ok' : 'erro',
-    banco: 'MongoDB',
-    conectado
-  });
-});
+app.get('/api/status', (req, res) => res.json({ ok: true }));
 
-app.use('/api/auth', authRoutes);
-app.use('/api/categorias', categoriasRoutes);
-app.use('/api/fontes-destinos', fontesRoutes);
-app.use('/api/lancamentos', lancamentosRoutes);
-app.use('/api/relatorios', relatoriosRoutes);
-app.use('/api/saude-financeira', saudeFinanceiraRoutes);
+app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/categorias', require('./routes/categorias.routes'));
+app.use('/api/fontes-destinos', require('./routes/fontesDestinos.routes'));
+app.use('/api/lancamentos', require('./routes/lancamentos.routes'));
+app.use('/api/relatorios', require('./routes/relatorios.routes'));
+app.use('/api/saude-financeira', require('./routes/saudeFinanceira.routes'));
 
-app.use(tratarErros);
+app.use(naoEncontrado);
+app.use(tratarErros); // tratamento de erros centralizado
 
-const PORT = process.env.PORT || 3000;
+if (require.main === module) {
+  // conecta ao MongoDB antes de aceitar requisições (falha cedo se a URI/senha estiver errada)
+  client
+    .connect()
+    .then(() => app.listen(env.porta, () => console.log(`API rodando em http://localhost:${env.porta}`)))
+    .catch((e) => {
+      console.error('Não foi possível conectar ao MongoDB:', e.message);
+      process.exit(1);
+    });
+}
 
-app.listen(PORT, () => {
-  console.log(`[API] Servidor Express em execução em http://localhost:${PORT}`);
-  conectarBanco();
-});
+module.exports = app;

@@ -1,247 +1,178 @@
-import mongoose from 'mongoose';
-import crypto from 'crypto';
+const { randomUUID } = require('crypto');
+const { colecao, transacao } = require('../config/db');
+const { adicionarMeses, dividirEmParcelas, deCentavos } = require('./regras');
 
-const lancamentoSchema = new mongoose.Schema(
-  {
-    usuarioId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Usuario',
-      required: true,
-      index: true
-    },
-    tipo: {
-      type: String,
-      required: true,
-      enum: ['entrada', 'saida']
-    },
-    descricao: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 120
-    },
-    valorCentavos: {
-      type: Number,
-      required: true,
-      min: 1,
-      validate: {
-        validator: Number.isInteger,
-        message: 'O valor em centavos deve ser um número inteiro.'
-      }
-    },
-    data: {
-      type: String,
-      required: true,
-      index: true
-    },
-    categoriaId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Categoria',
-      required: true
-    },
-    fonteDestinoId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'FonteDestino',
-      required: true
-    },
-    parcelaAtual: {
-      type: Number,
-      default: 1,
-      min: 1
-    },
-    totalParcelas: {
-      type: Number,
-      default: 1,
-      min: 1,
-      max: 48
-    },
-    grupoParcelamento: {
-      type: String,
-      default: null,
-      index: true
-    }
-  },
-  {
-    timestamps: { createdAt: 'criadoEm', updatedAt: false },
-    toJSON: {
-      transform(_, ret) {
-        ret.id = ret._id.toString();
-        ret.valor = Number((ret.valorCentavos / 100).toFixed(2));
-        ret.categoriaId = ret.categoriaId?._id
-          ? ret.categoriaId._id.toString()
-          : ret.categoriaId?.toString();
-        ret.fonteDestinoId = ret.fonteDestinoId?._id
-          ? ret.fonteDestinoId._id.toString()
-          : ret.fonteDestinoId?.toString();
-        delete ret._id;
-        delete ret.__v;
-        delete ret.usuarioId;
-        delete ret.valorCentavos;
-      }
-    }
-  }
-);
+const lancamentos = () => colecao('lancamentos');
 
-lancamentoSchema.virtual('valor').get(function () {
-  return Number((this.valorCentavos / 100).toFixed(2));
-});
+// Junta o nome da categoria e da fonte/destino ($lookup = "JOIN" do MongoDB)
+const COM_NOMES = [
+  { $lookup: { from: 'categorias', localField: 'categoriaId', foreignField: '_id', as: 'categoria' } },
+  { $lookup: { from: 'fontesDestinos', localField: 'fonteDestinoId', foreignField: '_id', as: 'fonteDestino' } },
+];
 
-lancamentoSchema.index({ usuarioId: 1, data: -1 });
+const mapear = (d) => {
+  if (!d) return d;
+  const c = d.categoria?.[0];
+  const f = d.fonteDestino?.[0];
+  return {
+    id: d._id.toHexString(),
+    tipo: d.tipo,
+    descricao: d.descricao,
+    valor: deCentavos(d.valorCentavos),
+    data: d.data,
+    dataCompra: d.dataCompra,
+    parcelaAtual: d.parcelaAtual,
+    totalParcelas: d.totalParcelas,
+    grupoParcelamento: d.grupoParcelamento,
+    rotulo: d.totalParcelas > 1 ? `${d.descricao} — ${d.parcelaAtual}/${d.totalParcelas}` : d.descricao,
+    categoria: { id: d.categoriaId.toHexString(), nome: c?.nome },
+    fonteDestino: { id: d.fonteDestinoId.toHexString(), nome: f?.nome, tipo: f?.tipo },
+  };
+};
 
-const LancamentoModel = mongoose.model('Lancamento', lancamentoSchema);
-
-export const Lancamento = {
-  Model: LancamentoModel,
-
-  async criar({
+/** Filtro da listagem (sempre com usuarioId). Datas são texto 'AAAA-MM-DD', então comparam em ordem. */
+function filtroListagem(usuarioId, f) {
+  return {
     usuarioId,
-    tipo,
-    descricao,
-    valor,
-    data,
-    categoriaId,
-    fonteDestinoId,
-    totalParcelas = 1
-  }) {
-    const nParcelas = Number(totalParcelas) || 1;
-    const totalCentavos = Math.round(Number(valor) * 100);
-    const baseCentavos = Math.floor(totalCentavos / nParcelas);
-    const restoCentavos = totalCentavos - baseCentavos * nParcelas;
-    const grupo = nParcelas > 1 ? crypto.randomUUID() : null;
+    data: { $gte: f.inicio, $lte: f.fim },
+    ...(f.tipo && { tipo: f.tipo }),
+    ...(f.categoriaId && { categoriaId: f.categoriaId }),
+    ...(f.fonteDestinoId && { fonteDestinoId: f.fonteDestinoId }),
+  };
+}
 
-    const documentos = [];
-    for (let i = 1; i <= nParcelas; i++) {
-      const centavosParcela = i === 1 ? baseCentavos + restoCentavos : baseCentavos;
-      documentos.push({
-        usuarioId,
-        tipo,
-        descricao: descricao.trim(),
-        valorCentavos: centavosParcela,
-        data,
-        categoriaId,
-        fonteDestinoId,
-        parcelaAtual: i,
-        totalParcelas: nParcelas,
-        grupoParcelamento: grupo
-      });
-    }
+const Lancamento = {
+  /** Listagem paginada + totais (entradas, saídas, saldo) do período filtrado, calculados no banco. */
+  async listar(usuarioId, filtros) {
+    const filtro = filtroListagem(usuarioId, filtros);
+    const [itens, [totais]] = await Promise.all([
+      lancamentos()
+        .aggregate([
+          { $match: filtro },
+          { $sort: { data: -1, _id: -1 } },
+          { $skip: (filtros.pagina - 1) * filtros.porPagina },
+          { $limit: filtros.porPagina },
+          ...COM_NOMES,
+        ])
+        .toArray(),
+      lancamentos()
+        .aggregate([
+          { $match: filtro },
+          {
+            $group: {
+              _id: null,
+              quantidade: { $sum: 1 },
+              entradas: { $sum: { $cond: [{ $eq: ['$tipo', 'entrada'] }, '$valorCentavos', 0] } },
+              saidas: { $sum: { $cond: [{ $eq: ['$tipo', 'saida'] }, '$valorCentavos', 0] } },
+            },
+          },
+        ])
+        .toArray(),
+    ]);
 
-    // Inserção única já é atômica no MongoDB; evita overhead de transação em lançamentos à vista
-    if (documentos.length === 1) {
-      const criado = await LancamentoModel.create(documentos[0]);
-      return [criado.toJSON()];
-    }
-
-    // Parcelamentos (N > 1): gravação atômica em transação ACID (todas ou nenhuma)
-    await LancamentoModel.createCollection().catch(() => {});
-
-    const session = await mongoose.startSession();
-    try {
-      session.startTransaction();
-      const criados = await LancamentoModel.insertMany(documentos, { session });
-      await session.commitTransaction();
-      return criados.map((d) => d.toJSON());
-    } catch (erro) {
-      await session.abortTransaction();
-      throw erro;
-    } finally {
-      session.endSession();
-    }
-  },
-
-  async listar({ usuarioId, inicio, fim, tipo, categoriaId, fonteDestinoId, pagina = 1, limite = 20 }) {
-    const filtro = { usuarioId };
-    if (inicio || fim) {
-      filtro.data = {};
-      if (inicio) filtro.data.$gte = inicio;
-      if (fim) filtro.data.$lte = fim;
-    }
-    if (tipo && ['entrada', 'saida'].includes(tipo)) filtro.tipo = tipo;
-    if (categoriaId && mongoose.Types.ObjectId.isValid(categoriaId)) {
-      filtro.categoriaId = categoriaId;
-    }
-    if (fonteDestinoId && mongoose.Types.ObjectId.isValid(fonteDestinoId)) {
-      filtro.fonteDestinoId = fonteDestinoId;
-    }
-
-    const todosNoPeriodo = await LancamentoModel.find(filtro)
-      .populate('categoriaId', 'nome tipo')
-      .populate('fonteDestinoId', 'nome tipo')
-      .sort({ data: -1, criadoEm: -1 });
-
-    let totalEntradasCentavos = 0;
-    let totalSaidasCentavos = 0;
-
-    for (const item of todosNoPeriodo) {
-      if (item.tipo === 'entrada') totalEntradasCentavos += item.valorCentavos;
-      else totalSaidasCentavos += item.valorCentavos;
-    }
-
-    const pag = Math.max(1, Number(pagina) || 1);
-    const lim = Math.max(1, Math.min(100, Number(limite) || 20));
-    const inicioSlice = (pag - 1) * lim;
-    const paginados = todosNoPeriodo.slice(inicioSlice, inicioSlice + lim).map((doc) => {
-      const obj = doc.toJSON();
-      obj.categoriaNome = doc.categoriaId?.nome || '';
-      obj.fonteDestinoNome = doc.fonteDestinoId?.nome || '';
-      return obj;
-    });
-
-    const totalEntradas = Number((totalEntradasCentavos / 100).toFixed(2));
-    const totalSaidas = Number((totalSaidasCentavos / 100).toFixed(2));
-
+    const t = totais ?? { quantidade: 0, entradas: 0, saidas: 0 };
     return {
-      lancamentos: paginados,
+      itens: itens.map(mapear),
       paginacao: {
-        pagina: pag,
-        limite: lim,
-        totalRegistros: todosNoPeriodo.length,
-        totalPaginas: Math.max(1, Math.ceil(todosNoPeriodo.length / lim))
+        pagina: filtros.pagina,
+        porPagina: filtros.porPagina,
+        totalItens: t.quantidade,
+        totalPaginas: Math.max(1, Math.ceil(t.quantidade / filtros.porPagina)),
       },
-      resumo: {
-        totalEntradas,
-        totalSaidas,
-        saldo: Number(((totalEntradasCentavos - totalSaidasCentavos) / 100).toFixed(2))
-      }
+      totais: { entradas: deCentavos(t.entradas), saidas: deCentavos(t.saidas), saldo: deCentavos(t.entradas - t.saidas) },
     };
   },
 
-  async buscarPorId(id, usuarioId) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return null;
-    const doc = await LancamentoModel.findOne({ _id: id, usuarioId });
-    return doc ? doc.toJSON() : null;
+  async buscar(usuarioId, id) {
+    const [d] = await lancamentos().aggregate([{ $match: { _id: id, usuarioId } }, ...COM_NOMES]).toArray();
+    return mapear(d) || null;
   },
 
-  async atualizar(id, usuarioId, { tipo, descricao, valor, data, categoriaId, fonteDestinoId }) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return null;
-    const doc = await LancamentoModel.findOneAndUpdate(
+  /**
+   * Cria o lançamento. Com N > 1 parcelas, grava N documentos dentro de UMA transação
+   * (todas as parcelas ou nenhuma), com o mesmo grupoParcelamento e o valor dividido em
+   * centavos (diferença na 1ª parcela). Cada parcela guarda:
+   *   dataCompra = data da compra (usada no cálculo da fatura)
+   *   data       = data da compra + (k − 1) meses (mês em que a parcela pesa no orçamento)
+   */
+  async criar(usuarioId, d) {
+    const n = d.parcelas;
+    const valores = dividirEmParcelas(d.valorCentavos, n);
+    const grupo = n > 1 ? randomUUID() : null;
+    const criadoEm = new Date();
+    const docs = valores.map((valorCentavos, i) => ({
+      usuarioId,
+      tipo: d.tipo,
+      descricao: d.descricao,
+      valorCentavos,
+      data: adicionarMeses(d.data, i),
+      dataCompra: d.data,
+      categoriaId: d.categoriaId,
+      fonteDestinoId: d.fonteDestinoId,
+      parcelaAtual: i + 1,
+      totalParcelas: n,
+      grupoParcelamento: grupo,
+      criadoEm,
+    }));
+
+    const ids = await transacao(async (session) => {
+      const { insertedIds } = await lancamentos().insertMany(docs, { session });
+      return Object.values(insertedIds);
+    });
+
+    const criados = await lancamentos()
+      .aggregate([{ $match: { _id: { $in: ids }, usuarioId } }, { $sort: { parcelaAtual: 1 } }, ...COM_NOMES])
+      .toArray();
+    return criados.map(mapear);
+  },
+
+  /**
+   * Atualiza UM lançamento. Se ele for uma parcela, `data` é a data desta parcela e a
+   * data da compra é recalculada a partir dela (data − (k − 1) meses).
+   */
+  async atualizar(usuarioId, id, atual, d) {
+    const { matchedCount } = await lancamentos().updateOne(
       { _id: id, usuarioId },
       {
-        tipo,
-        descricao: descricao.trim(),
-        valorCentavos: Math.round(Number(valor) * 100),
-        data,
-        categoriaId,
-        fonteDestinoId
-      },
-      { new: true, runValidators: true }
+        $set: {
+          tipo: d.tipo,
+          descricao: d.descricao,
+          valorCentavos: d.valorCentavos,
+          data: d.data,
+          dataCompra: adicionarMeses(d.data, -(atual.parcelaAtual - 1)),
+          categoriaId: d.categoriaId,
+          fonteDestinoId: d.fonteDestinoId,
+        },
+      }
     );
-    return doc ? doc.toJSON() : null;
+    return matchedCount ? this.buscar(usuarioId, id) : null;
   },
 
-  async excluir(id, usuarioId, todasParcelas = false) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return false;
-    const doc = await LancamentoModel.findOne({ _id: id, usuarioId });
-    if (!doc) return false;
-
-    if (todasParcelas && doc.grupoParcelamento) {
-      await LancamentoModel.deleteMany({
-        usuarioId,
-        grupoParcelamento: doc.grupoParcelamento
-      });
-    } else {
-      await LancamentoModel.deleteOne({ _id: id, usuarioId });
+  /** Exclui o lançamento ou, com todasParcelas, todas as parcelas da mesma compra. Devolve quantos excluiu. */
+  async excluir(usuarioId, id, todasParcelas) {
+    if (todasParcelas) {
+      const doc = await lancamentos().findOne({ _id: id, usuarioId }, { projection: { grupoParcelamento: 1 } });
+      if (!doc) return 0;
+      if (doc.grupoParcelamento) {
+        const { deletedCount } = await lancamentos().deleteMany({ usuarioId, grupoParcelamento: doc.grupoParcelamento });
+        return deletedCount;
+      }
     }
-    return true;
-  }
+    const { deletedCount } = await lancamentos().deleteOne({ _id: id, usuarioId });
+    return deletedCount;
+  },
+
+  /** Saídas nos cartões informados que ainda podem cair em faturas a partir de `desde`. */
+  async listarDosCartoes(usuarioId, cartaoIds, desde) {
+    const docs = await lancamentos()
+      .aggregate([
+        { $match: { usuarioId, tipo: 'saida', fonteDestinoId: { $in: cartaoIds }, data: { $gte: desde } } },
+        { $sort: { dataCompra: 1, _id: 1 } },
+        ...COM_NOMES,
+      ])
+      .toArray();
+    return docs.map(mapear);
+  },
 };
+
+module.exports = Lancamento;

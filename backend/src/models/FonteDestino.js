@@ -1,144 +1,96 @@
-import mongoose from 'mongoose';
+const { colecao } = require('../config/db');
+const { deCentavos } = require('./regras');
 
-const fonteDestinoSchema = new mongoose.Schema(
-  {
-    usuarioId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Usuario',
-      required: true,
-      index: true
-    },
-    nome: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 60
-    },
-    tipo: {
-      type: String,
-      required: true,
-      enum: ['renda', 'conta', 'cartao_credito']
-    },
-    diaFechamento: {
-      type: Number,
-      min: 1,
-      max: 31,
-      default: null
-    },
-    diaVencimento: {
-      type: Number,
-      min: 1,
-      max: 31,
-      default: null
-    },
-  
-    limiteCentavos: {
-      type: Number,
-      default: null,
-      validate: {
-        validator: (v) => v === null || (Number.isInteger(v) && v > 0),
-        message: 'O limite em centavos deve ser um inteiro positivo.'
-      }
-    },
-    reserva: {
-      type: Boolean,
-      default: false
-    }
-  },
-  {
-    timestamps: false,
-    toJSON: {
-      transform(_, ret) {
-        ret.id = ret._id.toString();
-        ret.limite =
-          ret.limiteCentavos !== null && ret.limiteCentavos !== undefined
-            ? Number((ret.limiteCentavos / 100).toFixed(2))
-            : null;
-        delete ret._id;
-        delete ret.__v;
-        delete ret.usuarioId;
-        delete ret.limiteCentavos;
-      }
-    }
-  }
-);
+const fontes = () => colecao('fontesDestinos');
+const lancamentos = () => colecao('lancamentos');
 
-fonteDestinoSchema.virtual('limite').get(function () {
-  return this.limiteCentavos !== null && this.limiteCentavos !== undefined
-    ? Number((this.limiteCentavos / 100).toFixed(2))
-    : null;
+const mapear = (d) =>
+  d && {
+    id: d._id.toHexString(),
+    nome: d.nome,
+    tipo: d.tipo,
+    diaFechamento: d.diaFechamento,
+    diaVencimento: d.diaVencimento,
+    limite: d.limiteCentavos === null ? null : deCentavos(d.limiteCentavos),
+    reserva: d.reserva,
+  };
+
+const documento = (usuarioId, d) => ({
+  usuarioId,
+  nome: d.nome,
+  tipo: d.tipo,
+  diaFechamento: d.diaFechamento,
+  diaVencimento: d.diaVencimento,
+  limiteCentavos: d.limiteCentavos,
+  reserva: d.reserva,
 });
 
-fonteDestinoSchema.index({ usuarioId: 1, nome: 1 }, { unique: true });
-
-const FonteDestinoModel = mongoose.model('FonteDestino', fonteDestinoSchema);
-
-export const FonteDestino = {
-  Model: FonteDestinoModel,
-
-  async criarPadrao(usuarioId) {
-    const iniciais = [
-      { usuarioId, nome: 'Conta Corrente', tipo: 'conta', reserva: false },
-      { usuarioId, nome: 'Poupança (Reserva)', tipo: 'conta', reserva: true },
-      { usuarioId, nome: 'Salário Mensal', tipo: 'renda', reserva: false }
-    ];
-    await FonteDestinoModel.insertMany(iniciais, { ordered: false }).catch(() => {});
-  },
-
-  async listarPorUsuario(usuarioId) {
-    const docs = await FonteDestinoModel.find({ usuarioId }).sort({ nome: 1 });
-    return docs.map((d) => d.toJSON());
-  },
-
-  async buscarPorId(id, usuarioId) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return null;
-    const doc = await FonteDestinoModel.findOne({ _id: id, usuarioId });
-    return doc ? doc.toJSON() : null;
-  },
-
-  async criar({ usuarioId, nome, tipo, diaFechamento, diaVencimento, limite, reserva }) {
-    const ehCartao = tipo === 'cartao_credito';
-    const doc = await FonteDestinoModel.create({
-      usuarioId,
-      nome: nome.trim(),
-      tipo,
-      diaFechamento: ehCartao ? Number(diaFechamento) : null,
-      diaVencimento: ehCartao ? Number(diaVencimento) : null,
-      limiteCentavos: ehCartao ? Math.round(Number(limite) * 100) : null,
-      reserva: Boolean(reserva)
-    });
-    return doc.toJSON();
-  },
-
-  async atualizar(id, usuarioId, { nome, tipo, diaFechamento, diaVencimento, limite, reserva }) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return null;
-    const ehCartao = tipo === 'cartao_credito';
-    const doc = await FonteDestinoModel.findOneAndUpdate(
-      { _id: id, usuarioId },
-      {
-        nome: nome.trim(),
-        tipo,
-        diaFechamento: ehCartao ? Number(diaFechamento) : null,
-        diaVencimento: ehCartao ? Number(diaVencimento) : null,
-        limiteCentavos: ehCartao ? Math.round(Number(limite) * 100) : null,
-        reserva: Boolean(reserva)
-      },
-      { new: true, runValidators: true }
+const FonteDestino = {
+  /** Fontes/destinos padrão de um novo usuário (dentro da transação do cadastro). */
+  async criarPadrao(session, usuarioId) {
+    const base = { diaFechamento: null, diaVencimento: null, limiteCentavos: null, reserva: false };
+    await fontes().insertMany(
+      [
+        documento(usuarioId, { ...base, nome: 'Conta corrente', tipo: 'conta' }),
+        documento(usuarioId, { ...base, nome: 'Salário', tipo: 'renda' }),
+        documento(usuarioId, { ...base, nome: 'Dinheiro', tipo: 'conta' }),
+      ],
+      { session }
     );
-    return doc ? doc.toJSON() : null;
   },
 
-  async temLancamentos(id, usuarioId) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return false;
-    const LancamentoModel = mongoose.models.Lancamento;
-    if (!LancamentoModel) return false;
-    const existe = await LancamentoModel.exists({ fonteDestinoId: id, usuarioId });
-    return Boolean(existe);
+  async listar(usuarioId, tipo) {
+    const [docs, contagens] = await Promise.all([
+      fontes().find({ usuarioId, ...(tipo && { tipo }) }).sort({ tipo: 1, nome: 1 }).toArray(),
+      lancamentos().aggregate([{ $match: { usuarioId } }, { $group: { _id: '$fonteDestinoId', n: { $sum: 1 } } }]).toArray(),
+    ]);
+    const porFonte = new Map(contagens.map((c) => [c._id.toHexString(), c.n]));
+    return docs.map((d) => ({ ...mapear(d), totalLancamentos: porFonte.get(d._id.toHexString()) ?? 0 }));
   },
 
-  async excluir(id, usuarioId) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return false;
-    const res = await FonteDestinoModel.deleteOne({ _id: id, usuarioId });
-    return res.deletedCount > 0;
-  }
+  async buscar(usuarioId, id) {
+    return mapear(await fontes().findOne({ _id: id, usuarioId })) || null;
+  },
+
+  async listarCartoes(usuarioId) {
+    return (await fontes().find({ usuarioId, tipo: 'cartao_credito' }).sort({ nome: 1 }).toArray()).map(mapear);
+  },
+
+  async criar(usuarioId, d) {
+    const doc = documento(usuarioId, d);
+    const { insertedId } = await fontes().insertOne(doc);
+    return mapear({ ...doc, _id: insertedId });
+  },
+
+  async atualizar(usuarioId, id, d) {
+    const { usuarioId: _, ...campos } = documento(usuarioId, d);
+    const doc = await fontes().findOneAndUpdate({ _id: id, usuarioId }, { $set: campos }, { returnDocument: 'after' });
+    return mapear(doc) || null;
+  },
+
+  /** Quantos lançamentos usam a fonte/destino, separados por tipo e se são parcelados. */
+  async resumoLancamentos(usuarioId, id) {
+    const [r] = await lancamentos()
+      .aggregate([
+        { $match: { usuarioId, fonteDestinoId: id } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            entradas: { $sum: { $cond: [{ $eq: ['$tipo', 'entrada'] }, 1, 0] } },
+            saidas: { $sum: { $cond: [{ $eq: ['$tipo', 'saida'] }, 1, 0] } },
+            parcelados: { $sum: { $cond: [{ $gt: ['$totalParcelas', 1] }, 1, 0] } },
+          },
+        },
+      ])
+      .toArray();
+    return r ?? { total: 0, entradas: 0, saidas: 0, parcelados: 0 };
+  },
+
+  async excluir(usuarioId, id) {
+    const { deletedCount } = await fontes().deleteOne({ _id: id, usuarioId });
+    return deletedCount > 0;
+  },
 };
+
+module.exports = FonteDestino;

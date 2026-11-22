@@ -1,101 +1,63 @@
-import mongoose from 'mongoose';
+const { colecao } = require('../config/db');
 
-const categoriaSchema = new mongoose.Schema(
-  {
-    usuarioId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Usuario',
-      required: true,
-      index: true
-    },
-    nome: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 60
-    },
-    tipo: {
-      type: String,
-      required: true,
-      enum: ['entrada', 'saida']
-    }
-  },
-  {
-    timestamps: false,
-    toJSON: {
-      transform(_, ret) {
-        ret.id = ret._id.toString();
-        delete ret._id;
-        delete ret.__v;
-        delete ret.usuarioId;
-      }
-    }
-  }
-);
+const categorias = () => colecao('categorias');
+const lancamentos = () => colecao('lancamentos');
 
-categoriaSchema.index({ usuarioId: 1, nome: 1, tipo: 1 }, { unique: true });
+const PADRAO = [
+  ['Salário', 'entrada'],
+  ['Outras receitas', 'entrada'],
+  ['Alimentação', 'saida'],
+  ['Moradia', 'saida'],
+  ['Saúde', 'saida'],
+  ['Mobilidade', 'saida'],
+  ['Lazer', 'saida'],
+  ['Educação', 'saida'],
+  ['Outros', 'saida'],
+];
 
-const CategoriaModel = mongoose.model('Categoria', categoriaSchema);
+const mapear = (d) => d && { id: d._id.toHexString(), nome: d.nome, tipo: d.tipo };
 
-export const Categoria = {
-  Model: CategoriaModel,
-
-  async criarPadrao(usuarioId) {
-    const iniciais = [
-      { usuarioId, nome: 'Salário', tipo: 'entrada' },
-      { usuarioId, nome: 'Rendimentos', tipo: 'entrada' },
-      { usuarioId, nome: 'Alimentação', tipo: 'saida' },
-      { usuarioId, nome: 'Moradia', tipo: 'saida' },
-      { usuarioId, nome: 'Saúde', tipo: 'saida' },
-      { usuarioId, nome: 'Mobilidade', tipo: 'saida' },
-      { usuarioId, nome: 'Lazer', tipo: 'saida' },
-      { usuarioId, nome: 'Educação', tipo: 'saida' },
-      { usuarioId, nome: 'Outros', tipo: 'saida' }
-    ];
-    await CategoriaModel.insertMany(iniciais, { ordered: false }).catch(() => {});
+// Todas as consultas filtram por usuarioId: um usuário nunca enxerga dados de outro (RF3)
+const Categoria = {
+  /** Cria as categorias padrão de um novo usuário (dentro da transação do cadastro). */
+  async criarPadrao(session, usuarioId) {
+    await categorias().insertMany(PADRAO.map(([nome, tipo]) => ({ usuarioId, nome, tipo })), { session });
   },
 
-  async listarPorUsuario(usuarioId) {
-    const docs = await CategoriaModel.find({ usuarioId }).sort({ tipo: 1, nome: 1 });
-    return docs.map((d) => d.toJSON());
+  async listar(usuarioId, tipo) {
+    const filtro = { usuarioId, ...(tipo && { tipo }) };
+    const [docs, contagens] = await Promise.all([
+      categorias().find(filtro).sort({ tipo: 1, nome: 1 }).toArray(),
+      lancamentos().aggregate([{ $match: { usuarioId } }, { $group: { _id: '$categoriaId', n: { $sum: 1 } } }]).toArray(),
+    ]);
+    const porCategoria = new Map(contagens.map((c) => [c._id.toHexString(), c.n]));
+    return docs.map((d) => ({ ...mapear(d), totalLancamentos: porCategoria.get(d._id.toHexString()) ?? 0 }));
   },
 
-  async buscarPorId(id, usuarioId) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return null;
-    const doc = await CategoriaModel.findOne({ _id: id, usuarioId });
-    return doc ? doc.toJSON() : null;
+  async buscar(usuarioId, id) {
+    return mapear(await categorias().findOne({ _id: id, usuarioId })) || null;
   },
 
-  async criar({ usuarioId, nome, tipo }) {
-    const doc = await CategoriaModel.create({
-      usuarioId,
-      nome: nome.trim(),
-      tipo
-    });
-    return doc.toJSON();
+  async criar(usuarioId, { nome, tipo }) {
+    const { insertedId } = await categorias().insertOne({ usuarioId, nome, tipo });
+    return mapear({ _id: insertedId, nome, tipo });
   },
 
-  async atualizar(id, usuarioId, { nome, tipo }) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return null;
-    const doc = await CategoriaModel.findOneAndUpdate(
-      { _id: id, usuarioId },
-      { nome: nome.trim(), tipo },
-      { new: true, runValidators: true }
-    );
-    return doc ? doc.toJSON() : null;
+  /** Devolve null se a categoria não existir para este usuário. */
+  async atualizar(usuarioId, id, { nome, tipo }) {
+    const d = await categorias().findOneAndUpdate({ _id: id, usuarioId }, { $set: { nome, tipo } }, { returnDocument: 'after' });
+    return mapear(d) || null;
   },
 
-  async temLancamentos(id, usuarioId) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return false;
-    const LancamentoModel = mongoose.models.Lancamento;
-    if (!LancamentoModel) return false;
-    const existe = await LancamentoModel.exists({ categoriaId: id, usuarioId });
-    return Boolean(existe);
+  async contarLancamentos(usuarioId, id) {
+    return lancamentos().countDocuments({ usuarioId, categoriaId: id });
   },
 
-  async excluir(id, usuarioId) {
-    if (!mongoose.Types.ObjectId.isValid(id)) return false;
-    const res = await CategoriaModel.deleteOne({ _id: id, usuarioId });
-    return res.deletedCount > 0;
-  }
+  /** true se excluiu; false se não existe para este usuário. */
+  async excluir(usuarioId, id) {
+    const { deletedCount } = await categorias().deleteOne({ _id: id, usuarioId });
+    return deletedCount > 0;
+  },
 };
+
+module.exports = Categoria;
