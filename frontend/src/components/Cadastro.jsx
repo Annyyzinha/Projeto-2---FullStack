@@ -1,8 +1,20 @@
 import { useState } from 'react';
-import { Container, Card, Form, Button, Alert, Spinner } from 'react-bootstrap';
 import { Link, useNavigate } from 'react-router-dom';
+import { Container, Card, Form, Button, Alert, Spinner } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
-import { aplicarMascaraCPF, cpfValido } from '../services/api';
+import { formatarCPF } from '../services/api';
+
+function validarCpfCliente(cpf) {
+  const d = String(cpf || '').replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const digito = (tamanho) => {
+    let soma = 0;
+    for (let i = 0; i < tamanho; i++) soma += Number(d[i]) * (tamanho + 1 - i);
+    const resto = (soma * 10) % 11;
+    return resto === 10 ? 0 : resto;
+  };
+  return digito(9) === Number(d[9]) && digito(10) === Number(d[10]);
+}
 
 export default function Cadastro() {
   const { cadastrar } = useAuth();
@@ -13,100 +25,117 @@ export default function Cadastro() {
     email: '',
     cpf: '',
     senha: '',
-    confirmarSenha: ''
+    confirmacaoSenha: ''
   });
-  const [errosCampos, setErrosCampos] = useState({});
+  const [erros, setErros] = useState({});
   const [erroGeral, setErroGeral] = useState('');
-  const [sucesso, setSucesso] = useState('');
   const [enviando, setEnviando] = useState(false);
 
   function atualizarCampo(campo, valor) {
-    setForm((anterior) => ({
-      ...anterior,
-      [campo]: campo === 'cpf' ? aplicarMascaraCPF(valor) : valor
-    }));
-    setErrosCampos((anterior) => ({ ...anterior, [campo]: undefined }));
+    const novoValor = campo === 'cpf' ? formatarCPF(valor) : valor;
+    setForm((prev) => ({ ...prev, [campo]: novoValor }));
+    if (erros[campo]) {
+      setErros((prev) => {
+        const copia = { ...prev };
+        delete copia[campo];
+        return copia;
+      });
+    }
   }
 
-  function validarCliente() {
-    const campos = {};
-    if (!form.nome.trim()) campos.nome = 'O nome é obrigatório.';
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-      campos.email = 'Informe um e-mail válido.';
+  function validarFormulario() {
+    const novosErros = {};
+    if (!form.nome.trim()) {
+      novosErros.nome = 'Informe o nome completo.';
     }
-    if (!cpfValido(form.cpf)) {
-      campos.cpf = 'CPF inválido. Verifique os dígitos.';
+    if (!form.email.trim()) {
+      novosErros.email = 'Informe o e-mail.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      novosErros.email = 'Formato de e-mail inválido.';
     }
-    if (form.senha.length < 8 || !/[a-zA-Z]/.test(form.senha) || !/\d/.test(form.senha)) {
-      campos.senha = 'A senha deve ter no mínimo 8 caracteres, com letras e números.';
+    if (!form.cpf.trim()) {
+      novosErros.cpf = 'Informe o CPF.';
+    } else if (!validarCpfCliente(form.cpf)) {
+      novosErros.cpf = 'CPF inválido (verifique os dígitos).';
     }
-    if (form.senha !== form.confirmarSenha) {
-      campos.confirmarSenha = 'A confirmação de senha não confere.';
+    if (!form.senha) {
+      novosErros.senha = 'Informe a senha.';
+    } else if (form.senha.length < 8 || !/[A-Za-z]/.test(form.senha) || !/\d/.test(form.senha)) {
+      novosErros.senha = 'A senha deve ter no mínimo 8 caracteres, com letras e números.';
     }
-    return campos;
+    if (!form.confirmacaoSenha) {
+      novosErros.confirmacaoSenha = 'Confirme a senha.';
+    } else if (form.confirmacaoSenha !== form.senha) {
+      novosErros.confirmacaoSenha = 'As senhas não conferem.';
+    }
+
+    setErros(novosErros);
+    return Object.keys(novosErros).length === 0;
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setErroGeral('');
-    setSucesso('');
+    if (!validarFormulario()) return;
 
-    const campos = validarCliente();
-    if (Object.keys(campos).length > 0) {
-      setErrosCampos(campos);
-      return;
-    }
-
-    setErrosCampos({});
     setEnviando(true);
     try {
       await cadastrar({
         nome: form.nome.trim(),
         email: form.email.trim(),
         cpf: form.cpf,
-        senha: form.senha
+        senha: form.senha,
+        confirmacaoSenha: form.confirmacaoSenha
       });
-      setSucesso('Cadastro realizado com sucesso! Redirecionando para o login...');
-      setTimeout(() => navigate('/login'), 1500);
+      navigate('/', { replace: true });
     } catch (err) {
+      if (err.campos && Object.keys(err.campos).length > 0) {
+        setErros(err.campos);
+      }
       setErroGeral(err.message || 'Não foi possível concluir o cadastro.');
-      if (err.campos) setErrosCampos(err.campos);
     } finally {
       setEnviando(false);
     }
   }
 
   return (
-    <div className="auth-wrapper">
-      <Card className="auth-card" style={{ maxWidth: '520px' }}>
+    <Container className="py-5" style={{ maxWidth: '480px' }}>
+      <Card className="shadow-sm">
         <Card.Body className="p-4">
-          <h3 className="fw-bold mb-1 text-center">Criar Conta</h3>
-          <p className="text-muted text-center mb-4">Preencha seus dados para começar</p>
+          <h3 className="fw-bold text-primary mb-1">Criar Conta</h3>
+          <p className="text-muted small mb-4">
+            Cadastre-se para gerenciar suas finanças pessoais
+          </p>
 
-          {erroGeral && <Alert variant="danger">{erroGeral}</Alert>}
-          {sucesso && <Alert variant="success">{sucesso}</Alert>}
+          {erroGeral && (
+            <Alert variant="danger" className="py-2 small">
+              {erroGeral}
+            </Alert>
+          )}
 
           <Form onSubmit={handleSubmit} noValidate>
             <Form.Group className="mb-3" controlId="cadNome">
               <Form.Label>Nome completo</Form.Label>
               <Form.Control
                 type="text"
+                placeholder="Ex.: Ana Souza"
                 value={form.nome}
+                isInvalid={!!erros.nome}
                 onChange={(e) => atualizarCampo('nome', e.target.value)}
-                isInvalid={Boolean(errosCampos.nome)}
               />
-              <Form.Control.Feedback type="invalid">{errosCampos.nome}</Form.Control.Feedback>
+              <Form.Control.Feedback type="invalid">{erros.nome}</Form.Control.Feedback>
             </Form.Group>
 
             <Form.Group className="mb-3" controlId="cadEmail">
               <Form.Label>E-mail</Form.Label>
               <Form.Control
                 type="email"
+                placeholder="seuemail@exemplo.com"
                 value={form.email}
+                isInvalid={!!erros.email}
                 onChange={(e) => atualizarCampo('email', e.target.value)}
-                isInvalid={Boolean(errosCampos.email)}
               />
-              <Form.Control.Feedback type="invalid">{errosCampos.email}</Form.Control.Feedback>
+              <Form.Control.Feedback type="invalid">{erros.email}</Form.Control.Feedback>
             </Form.Group>
 
             <Form.Group className="mb-3" controlId="cadCpf">
@@ -114,11 +143,12 @@ export default function Cadastro() {
               <Form.Control
                 type="text"
                 placeholder="000.000.000-00"
+                maxLength={14}
                 value={form.cpf}
+                isInvalid={!!erros.cpf}
                 onChange={(e) => atualizarCampo('cpf', e.target.value)}
-                isInvalid={Boolean(errosCampos.cpf)}
               />
-              <Form.Control.Feedback type="invalid">{errosCampos.cpf}</Form.Control.Feedback>
+              <Form.Control.Feedback type="invalid">{erros.cpf}</Form.Control.Feedback>
             </Form.Group>
 
             <Form.Group className="mb-3" controlId="cadSenha">
@@ -127,26 +157,27 @@ export default function Cadastro() {
                 type="password"
                 placeholder="Mínimo 8 caracteres (letras e números)"
                 value={form.senha}
+                isInvalid={!!erros.senha}
                 onChange={(e) => atualizarCampo('senha', e.target.value)}
-                isInvalid={Boolean(errosCampos.senha)}
               />
-              <Form.Control.Feedback type="invalid">{errosCampos.senha}</Form.Control.Feedback>
+              <Form.Control.Feedback type="invalid">{erros.senha}</Form.Control.Feedback>
             </Form.Group>
 
-            <Form.Group className="mb-4" controlId="cadConfirmarSenha">
+            <Form.Group className="mb-4" controlId="cadConfirmacao">
               <Form.Label>Confirmar senha</Form.Label>
               <Form.Control
                 type="password"
-                value={form.confirmarSenha}
-                onChange={(e) => atualizarCampo('confirmarSenha', e.target.value)}
-                isInvalid={Boolean(errosCampos.confirmarSenha)}
+                placeholder="Repita a senha"
+                value={form.confirmacaoSenha}
+                isInvalid={!!erros.confirmacaoSenha}
+                onChange={(e) => atualizarCampo('confirmacaoSenha', e.target.value)}
               />
               <Form.Control.Feedback type="invalid">
-                {errosCampos.confirmarSenha}
+                {erros.confirmacaoSenha}
               </Form.Control.Feedback>
             </Form.Group>
 
-            <Button type="submit" variant="primary" className="w-100" disabled={enviando}>
+            <Button variant="primary" type="submit" className="w-100" disabled={enviando}>
               {enviando ? (
                 <>
                   <Spinner animation="border" size="sm" className="me-2" />
@@ -158,13 +189,11 @@ export default function Cadastro() {
             </Button>
           </Form>
 
-          <div className="text-center mt-3">
-            <small className="text-muted">
-              Já possui conta? <Link to="/login">Fazer login</Link>
-            </small>
+          <div className="text-center mt-3 small">
+            Já possui conta? <Link to="/login">Entrar</Link>
           </div>
         </Card.Body>
       </Card>
-    </div>
+    </Container>
   );
 }
