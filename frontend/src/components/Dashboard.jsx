@@ -28,10 +28,10 @@ export default function Dashboard() {
     try {
       const [respLancamentos, respFaturas] = await Promise.all([
         apiFetch('/lancamentos'),
-        apiFetch('/lancamentos/faturas/previsao?meses=3')
+        apiFetch('/relatorios/faturas?meses=3')
       ]);
       setDadosMes(respLancamentos);
-      setFaturasCartoes(Array.isArray(respFaturas) ? respFaturas : []);
+      setFaturasCartoes(Array.isArray(respFaturas?.cartoes) ? respFaturas.cartoes : []);
     } catch (err) {
       setErro(err.message || 'Não foi possível carregar o resumo financeiro.');
     } finally {
@@ -43,8 +43,8 @@ export default function Dashboard() {
     carregarResumo();
   }, [carregarResumo]);
 
-  const resumo = dadosMes?.resumo || { totalEntradas: 0, totalSaidas: 0, saldo: 0 };
-  const recentes = (dadosMes?.lancamentos || []).slice(0, 5);
+  const resumo = dadosMes?.totais || { entradas: 0, saidas: 0, saldo: 0 };
+  const recentes = (dadosMes?.itens || []).slice(0, 5);
 
   return (
     <Container className="pb-5">
@@ -106,7 +106,7 @@ export default function Dashboard() {
                   <div>
                     <div className="text-muted small text-uppercase fw-bold">Entradas</div>
                     <h3 className="fw-bold text-success mt-1 mb-0">
-                      {formatarMoeda(resumo.totalEntradas)}
+                      {formatarMoeda(resumo.entradas)}
                     </h3>
                   </div>
                   <div className="kpi-icon kpi-icon-entrada" aria-hidden="true">
@@ -124,7 +124,7 @@ export default function Dashboard() {
                   <div>
                     <div className="text-muted small text-uppercase fw-bold">Saídas</div>
                     <h3 className="fw-bold text-danger mt-1 mb-0">
-                      {formatarMoeda(resumo.totalSaidas)}
+                      {formatarMoeda(resumo.saidas)}
                     </h3>
                   </div>
                   <div className="kpi-icon kpi-icon-saida" aria-hidden="true">
@@ -203,7 +203,7 @@ export default function Dashboard() {
                               )}
                             </td>
                             <td>
-                              <Badge bg="secondary">{item.categoriaNome}</Badge>
+                              <Badge bg="secondary">{item.categoria?.nome || '-'}</Badge>
                             </td>
                             <td
                               className={`text-end fw-bold text-nowrap ${
@@ -243,8 +243,9 @@ export default function Dashboard() {
                     </Alert>
                   ) : (
                     <div className="d-flex flex-column gap-3">
-                      {faturasCartoes.map(({ cartao, faturas }) => {
-                        const faturaAtual = faturas[0];
+                      {faturasCartoes.map((cartao) => {
+                        const faturaAtual =
+                          cartao.faturas?.find((f) => f.status === 'aberta') || cartao.faturas?.[0];
                         const pct =
                           cartao.limite > 0
                             ? Math.min(100, (cartao.limiteUtilizado / cartao.limite) * 100)
