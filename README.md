@@ -2,6 +2,15 @@
 
 API REST em **Node.js/Express + MongoDB** e SPA em **React (Vite)** para controle financeiro pessoal.
 
+## Integrantes
+
+- **Anny Vitoria Costa**
+- **Isabelle Lays dos Santos Teixeira**
+
+## Vídeo de Apresentação
+
+- **Apresentação do projeto:** [Vídeo do Projeto 2](https://youtu.be/lTicHlbPK7Q)
+
 ## Tecnologias
 
 | Camada | Tecnologias |
