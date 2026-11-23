@@ -22,6 +22,12 @@ function formatarReferencia(ref) {
   return `${mes}/${ano}`;
 }
 
+const BADGE_STATUS = {
+  fechada: { bg: 'warning', text: 'dark', label: 'Fechada' },
+  aberta: { bg: 'primary', text: undefined, label: 'Aberta (Atual)' },
+  futura: { bg: 'secondary', text: undefined, label: 'Prevista' }
+};
+
 export default function Faturas() {
   const [meses, setMeses] = useState(3);
   const [cartoesFaturas, setCartoesFaturas] = useState([]);
@@ -32,8 +38,8 @@ export default function Faturas() {
     setCarregando(true);
     setErro('');
     try {
-      const dados = await apiFetch(`/lancamentos/faturas/previsao?meses=${qtdMeses}`);
-      setCartoesFaturas(Array.isArray(dados) ? dados : []);
+      const dados = await apiFetch(`/relatorios/faturas?meses=${qtdMeses}`);
+      setCartoesFaturas(Array.isArray(dados?.cartoes) ? dados.cartoes : []);
     } catch (err) {
       setErro(err.message || 'Erro ao carregar previsão de faturas.');
     } finally {
@@ -96,7 +102,11 @@ export default function Faturas() {
         </Alert>
       ) : (
         <div className="d-flex flex-column gap-4">
-          {cartoesFaturas.map(({ cartao, faturas }) => {
+          {cartoesFaturas.map((cartao) => {
+            const faturas = cartao.faturas || [];
+            const indiceAberta = faturas.findIndex((f) => f.status === 'aberta');
+            const chaveInicial = String(indiceAberta >= 0 ? indiceAberta : 0);
+
             const percentualUso =
               cartao.limite > 0
                 ? Math.min(100, Math.max(0, (cartao.limiteUtilizado / cartao.limite) * 100))
@@ -149,60 +159,66 @@ export default function Faturas() {
                 </Card.Header>
 
                 <Card.Body>
-                  <Accordion defaultActiveKey="0">
-                    {faturas.map((fatura, indice) => (
-                      <Accordion.Item key={fatura.referencia} eventKey={String(indice)}>
-                        <Accordion.Header>
-                          <div className="d-flex flex-wrap justify-content-between align-items-center w-100 pe-3 gap-2">
-                            <div>
-                              <span className="fw-semibold me-2">
-                                Fatura {formatarReferencia(fatura.referencia)}
-                              </span>
-                              <Badge bg={indice === 0 ? 'primary' : 'secondary'}>
-                                {indice === 0 ? 'Aberta (Atual)' : 'Prevista'}
-                              </Badge>
-                              <div className="small text-muted mt-1">
-                                Fechamento: {formatarDataBR(fatura.fechamento)} | Vencimento:{' '}
-                                {formatarDataBR(fatura.vencimento)}
+                  <Accordion defaultActiveKey={chaveInicial}>
+                    {faturas.map((fatura, indice) => {
+                      const statusInfo =
+                        BADGE_STATUS[fatura.status] ||
+                        (indice === 0 ? BADGE_STATUS.aberta : BADGE_STATUS.futura);
+
+                      return (
+                        <Accordion.Item key={fatura.referencia} eventKey={String(indice)}>
+                          <Accordion.Header>
+                            <div className="d-flex flex-wrap justify-content-between align-items-center w-100 pe-3 gap-2">
+                              <div>
+                                <span className="fw-semibold me-2">
+                                  Fatura {formatarReferencia(fatura.referencia)}
+                                </span>
+                                <Badge bg={statusInfo.bg} text={statusInfo.text}>
+                                  {statusInfo.label}
+                                </Badge>
+                                <div className="small text-muted mt-1">
+                                  Fechamento: {formatarDataBR(fatura.fechamento)} | Vencimento:{' '}
+                                  {formatarDataBR(fatura.vencimento)}
+                                </div>
+                              </div>
+                              <div className="fs-6 fw-bold text-danger">
+                                {formatarMoeda(fatura.total)}
                               </div>
                             </div>
-                            <div className="fs-6 fw-bold text-danger">
-                              {formatarMoeda(fatura.total)}
-                            </div>
-                          </div>
-                        </Accordion.Header>
-                        <Accordion.Body>
-                          {fatura.lancamentos.length === 0 ? (
-                            <p className="text-muted small mb-0 text-center py-2">
-                              Nenhum lançamento previsto para esta fatura.
-                            </p>
-                          ) : (
-                            <Table responsive size="sm" hover className="align-middle mb-0">
-                              <thead className="table-light">
-                                <tr>
-                                  <th>Data da Compra</th>
-                                  <th>Descrição / Parcela</th>
-                                  <th className="text-end">Valor</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {fatura.lancamentos.map((lanc) => (
-                                  <tr key={`${lanc.id}-${lanc.parcelaAtual}`}>
-                                    <td className="small text-muted text-nowrap">
-                                      {formatarDataBR(lanc.dataCompra)}
-                                    </td>
-                                    <td>{lanc.indicacaoParcela}</td>
-                                    <td className="text-end fw-medium text-nowrap">
-                                      {formatarMoeda(lanc.valor)}
-                                    </td>
+                          </Accordion.Header>
+                          <Accordion.Body>
+                            {fatura.lancamentos.length === 0 ? (
+                              <p className="text-muted small mb-0 text-center py-2">
+                                Nenhum lançamento previsto para esta fatura.
+                              </p>
+                            ) : (
+                              <Table responsive size="sm" hover className="align-middle mb-0">
+                                <thead className="table-light">
+                                  <tr>
+                                    <th>Data da Compra</th>
+                                    <th>Descrição / Parcela</th>
+                                    <th className="text-end">Valor</th>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </Table>
-                          )}
-                        </Accordion.Body>
-                      </Accordion.Item>
-                    ))}
+                                </thead>
+                                <tbody>
+                                  {fatura.lancamentos.map((lanc) => (
+                                    <tr key={`${lanc.id}-${lanc.parcelaAtual}`}>
+                                      <td className="small text-muted text-nowrap">
+                                        {formatarDataBR(lanc.dataCompra)}
+                                      </td>
+                                      <td>{lanc.rotulo || lanc.descricao}</td>
+                                      <td className="text-end fw-medium text-nowrap">
+                                        {formatarMoeda(lanc.valor)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </Table>
+                            )}
+                          </Accordion.Body>
+                        </Accordion.Item>
+                      );
+                    })}
                   </Accordion>
                 </Card.Body>
               </Card>
