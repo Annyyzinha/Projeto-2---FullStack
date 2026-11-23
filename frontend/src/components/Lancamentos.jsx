@@ -60,9 +60,9 @@ export default function Lancamentos() {
   const [pagina, setPagina] = useState(1);
 
   const [dados, setDados] = useState({
-    lancamentos: [],
-    paginacao: { pagina: 1, totalPaginas: 1, totalRegistros: 0 },
-    resumo: { totalEntradas: 0, totalSaidas: 0, saldo: 0 }
+    itens: [],
+    paginacao: { pagina: 1, totalPaginas: 1, totalItens: 0 },
+    totais: { entradas: 0, saidas: 0, saldo: 0 }
   });
   const [carregando, setCarregando] = useState(true);
   const [erroLista, setErroLista] = useState('');
@@ -150,8 +150,8 @@ export default function Lancamentos() {
       descricao: item.descricao,
       valor: String(item.valor),
       data: item.data,
-      categoriaId: item.categoriaId,
-      fonteDestinoId: item.fonteDestinoId,
+      categoriaId: item.categoria?.id || '',
+      fonteDestinoId: item.fonteDestino?.id || '',
       totalParcelas: item.totalParcelas || 1
     });
     setErrosCampos({});
@@ -174,7 +174,11 @@ export default function Lancamentos() {
       }
       return proximo;
     });
-    setErrosCampos((anterior) => ({ ...anterior, [campo]: undefined }));
+    setErrosCampos((anterior) => ({
+      ...anterior,
+      [campo]: undefined,
+      ...(campo === 'totalParcelas' ? { parcelas: undefined } : {})
+    }));
   }
 
   function validarFormCliente() {
@@ -229,7 +233,7 @@ export default function Lancamentos() {
     };
 
     if (permiteParcelar) {
-      payload.totalParcelas = Number(form.totalParcelas);
+      payload.parcelas = Number(form.totalParcelas);
     }
 
     setErrosCampos({});
@@ -310,6 +314,9 @@ export default function Lancamentos() {
     }
     return `1ª parcela de ${formatarMoeda(primeira)} + ${n - 1}x de ${formatarMoeda(demais)}`;
   }, [permiteParcelar, form.valor, form.totalParcelas]);
+
+  const itens = dados.itens || [];
+  const erroParcelas = errosCampos.totalParcelas || errosCampos.parcelas;
 
   return (
     <Container className="pb-5">
@@ -439,7 +446,7 @@ export default function Lancamentos() {
             <Card.Body className="py-3">
               <div className="small text-muted">Total de Entradas</div>
               <div className="fs-5 fw-bold text-success">
-                {formatarMoeda(dados.resumo?.totalEntradas)}
+                {formatarMoeda(dados.totais?.entradas)}
               </div>
             </Card.Body>
           </Card>
@@ -449,7 +456,7 @@ export default function Lancamentos() {
             <Card.Body className="py-3">
               <div className="small text-muted">Total de Saídas</div>
               <div className="fs-5 fw-bold text-danger">
-                {formatarMoeda(dados.resumo?.totalSaidas)}
+                {formatarMoeda(dados.totais?.saidas)}
               </div>
             </Card.Body>
           </Card>
@@ -460,10 +467,10 @@ export default function Lancamentos() {
               <div className="small text-muted">Saldo do Período</div>
               <div
                 className={`fs-5 fw-bold ${
-                  (dados.resumo?.saldo || 0) >= 0 ? 'text-primary' : 'text-danger'
+                  (dados.totais?.saldo || 0) >= 0 ? 'text-primary' : 'text-danger'
                 }`}
               >
-                {formatarMoeda(dados.resumo?.saldo)}
+                {formatarMoeda(dados.totais?.saldo)}
               </div>
             </Card.Body>
           </Card>
@@ -490,7 +497,7 @@ export default function Lancamentos() {
                 Tentar novamente
               </Button>
             </Alert>
-          ) : dados.lancamentos.length === 0 ? (
+          ) : itens.length === 0 ? (
             <Alert variant="light" className="border text-center mb-0">
               Nenhum lançamento encontrado para os filtros selecionados.
             </Alert>
@@ -509,7 +516,7 @@ export default function Lancamentos() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dados.lancamentos.map((item) => (
+                  {itens.map((item) => (
                     <tr key={item.id}>
                       <td className="small text-muted text-nowrap">{formatarDataBR(item.data)}</td>
                       <td className="fw-medium">
@@ -520,8 +527,8 @@ export default function Lancamentos() {
                           </Badge>
                         )}
                       </td>
-                      <td className="small">{item.categoriaNome}</td>
-                      <td className="small">{item.fonteDestinoNome}</td>
+                      <td className="small">{item.categoria?.nome || '-'}</td>
+                      <td className="small">{item.fonteDestino?.nome || '-'}</td>
                       <td>
                         <Badge bg={item.tipo === 'entrada' ? 'success' : 'danger'}>
                           {item.tipo === 'entrada' ? 'Entrada' : 'Saída'}
@@ -559,11 +566,11 @@ export default function Lancamentos() {
                 </tbody>
               </Table>
 
-              {dados.paginacao.totalPaginas > 1 && (
+              {dados.paginacao?.totalPaginas > 1 && (
                 <div className="d-flex justify-content-between align-items-center">
                   <small className="text-muted">
                     Página {dados.paginacao.pagina} de {dados.paginacao.totalPaginas} (
-                    {dados.paginacao.totalRegistros} registros)
+                    {dados.paginacao.totalItens} registros)
                   </small>
                   <Pagination size="sm" className="mb-0">
                     <Pagination.Prev
@@ -727,10 +734,10 @@ export default function Lancamentos() {
                         max={48}
                         value={form.totalParcelas}
                         onChange={(e) => atualizarCampoForm('totalParcelas', e.target.value)}
-                        isInvalid={Boolean(errosCampos.totalParcelas)}
+                        isInvalid={Boolean(erroParcelas)}
                       />
                       <Form.Control.Feedback type="invalid">
-                        {errosCampos.totalParcelas}
+                        {erroParcelas}
                       </Form.Control.Feedback>
                     </Form.Group>
                     {previaParcelas && (
