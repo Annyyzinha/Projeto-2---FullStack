@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 export async function apiFetch(endpoint, options = {}) {
   const token = localStorage.getItem('token');
@@ -56,7 +56,7 @@ export function formatarDataBR(dataISO) {
   return `${dia}/${mes}/${ano}`;
 }
 
-export function aplicarMascaraCPF(valor) {
+export function formatarCPF(valor) {
   const digitos = String(valor).replace(/\D/g, '').slice(0, 11);
   return digitos
     .replace(/(\d{3})(\d)/, '$1.$2')
