@@ -23,8 +23,9 @@ export function AuthProvider({ children }) {
       }
       try {
         const dados = await apiFetch('/auth/me');
-        setUsuario(dados);
-        localStorage.setItem('usuario', JSON.stringify(dados));
+        const usuarioAtual = dados?.usuario ?? dados;
+        setUsuario(usuarioAtual);
+        localStorage.setItem('usuario', JSON.stringify(usuarioAtual));
       } catch {
         setToken(null);
         setUsuario(null);
@@ -47,11 +48,18 @@ export function AuthProvider({ children }) {
     return dados;
   }
 
-  async function cadastrar({ nome, email, cpf, senha }) {
-    return apiFetch('/auth/cadastro', {
+  async function cadastrar({ nome, email, cpf, senha, confirmacaoSenha }) {
+    const dados = await apiFetch('/auth/cadastro', {
       method: 'POST',
-      body: JSON.stringify({ nome, email, cpf, senha })
+      body: JSON.stringify({ nome, email, cpf, senha, confirmacaoSenha })
     });
+    if (dados?.token && dados?.usuario) {
+      localStorage.setItem('token', dados.token);
+      localStorage.setItem('usuario', JSON.stringify(dados.usuario));
+      setToken(dados.token);
+      setUsuario(dados.usuario);
+    }
+    return dados;
   }
 
   function logout() {
